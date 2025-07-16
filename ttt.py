@@ -674,7 +674,7 @@ class TTTBase(nn.Module):
     def _init_ttt_lr_gate(self):
         # [width, 1]
         linear_weight_data = nn.Linear(self.width, 1, bias=True).weight.data
-        # prepending head dim -> [num_heads, width, 1]
+        # prepending head dim -> [num_heads, 1, width]
         self.learnable_ttt_lr_weight = nn.Parameter(
             torch.stack(
                 [torch.normal(0, 0.02, size=linear_weight_data.shape) for _ in range(self.num_heads)],
