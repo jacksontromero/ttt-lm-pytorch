@@ -825,8 +825,11 @@ class TTTBase(nn.Module):
             mini_batch_step_offset = cache_params.seqlen_offset % self.mini_batch_size
         else:
             mini_batch_step_offset = 0
+        
         token_eta, ttt_lr_eta = self.get_eta(X, mini_batch_step_offset, mini_batch_size)
+        # [B, num_heads, num_mini_batch, mini_batch_size, mini_batch_size]
         eta = token_eta * ttt_lr_eta
+
         # decouple token_coeff and ilr_coeff for decoding
         inputs = {
             "XQ": XQ,
@@ -955,13 +958,15 @@ class TTTLinear(TTTBase):
             # [B, nh, 1, f]
             b1_init = params_dict["b1_states"]
 
-            # [B,nh,K,f], K=mini_batch_size
+            # [B, nh, K, f], K=mini_batch_size
             XQ_mini_batch = inputs["XQ"]
             XV_mini_batch = inputs["XV"]
             XK_mini_batch = inputs["XK"]
-            # [B, nh, K, 1]
+            # [B, nh, K, K]
             eta_mini_batch = inputs["eta"]
+            # [B, nh, K, 1]
             token_eta_mini_batch = inputs["token_eta"]
+            # [B, nh, 1, K]
             ttt_lr_eta_mini_batch = inputs["ttt_lr_eta"]
 
             X1 = XK_mini_batch
@@ -979,9 +984,10 @@ class TTTLinear(TTTBase):
                 Attn1 = torch.tril(XQ_mini_batch @ X1.transpose(-2, -1))
                 # [B,nh,1,f] - [B,nh,K,K] @ [B,nh,K,f] -> [B,nh,K,f]
                 b1_bar = b1_init - torch.tril(eta_mini_batch) @ grad_l_wrt_Z1
-                # [B,nh,K,f] @ [B,nh,f,f] - ([B,nh,K,1] * [B,nh,K,K]) @ [B,nh,K,f] + [B,nh,K,f]
+                # [B,nh,K,f] @ [B,nh,f,f] - ([B,nh,K,K] * [B,nh,K,K]) @ [B,nh,K,f] + [B,nh,K,f]
                 Z1_bar = XQ_mini_batch @ W1_init - (eta_mini_batch * Attn1) @ grad_l_wrt_Z1 + b1_bar
 
+                # [B,nh,K,1]
                 last_eta_mini_batch = eta_mini_batch[:, :, -1, :, None]
                 # [B,nh,f,f] - [B,nh,f,K] @ [B,nh,K,f]
                 W1_last = W1_init - (last_eta_mini_batch * X1).transpose(-1, -2) @ grad_l_wrt_Z1
@@ -990,6 +996,7 @@ class TTTLinear(TTTBase):
                 grad_W1_last = torch.zeros_like(W1_last)
                 grad_b1_last = torch.zeros_like(b1_last)
             else:
+                # [B, nh, K, K]
                 ttt_lr_eta_mini_batch = torch.broadcast_to(
                     ttt_lr_eta_mini_batch,
                     (
